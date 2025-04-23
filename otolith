@@ -1,0 +1,169 @@
+#Chilipepper rockfish otolith weight analysis
+library(ggplot2)
+library(Rmisc)
+library(dplyr)
+library(readr)
+library(RColorBrewer)
+library(fishmethods)
+library(DLMtool)
+library(FLR)
+library(tidyr)
+library(tidyverse)
+library(EnvStats)
+library(ggpmisc)
+library(pak)
+library(nwfscSurvey)
+library(ggridges)
+library(rstatix)
+library(tidyverse)
+library(FSA)
+library(nlstools)
+library(plotrix)
+library(car)
+library(boot)
+library(FSAdata)
+
+#Use cleanedmergedchili.dat.csv file in otolith morphometric space
+
+#Otolith weight - age distribution
+sp <- ggplot(data=cleanedmergedchili.dat, aes(x=age, y = Wgt_g))+geom_point()
+require(stats)
+reg<-lm(Wgt_g ~ age, data = cleanedmergedchili.dat)
+reg
+coeff=coefficients(reg)
+# Equation of the line : 
+eq = paste0("y = ", round(coeff[1],2), "*x + ", round(coeff[2],2))
+# Plot
+sp + geom_abline(intercept = 0.02292, slope = 0.02086)+
+  ggtitle(eq)
+# Change line type, color and size
+sp + geom_abline(intercept = 0.02292, slope = 0.02086, color="red", 
+                 linetype="dashed", size=1.5)+
+  ggtitle(eq)
+
+ageotowgt_region<- ggplot(cleanedmergedchili.dat ,aes(x= age, y= Wgt_g, colour= as.factor(Region)))+
+  geom_point(alpha = 0.1)+
+  geom_smooth(method= "lm", formula = y ~ poly(x, 2, raw = TRUE),se = FALSE)+
+  labs(x="Age (years)", y = "Otolith weight (g)", title= "Age-otolith weight relationship")+
+  scale_x_continuous(name="Age (years)", limits=c(0,25)) +
+  scale_y_continuous(name="Otolith weight (g)", limits=c(0,0.5))+
+  stat_poly_eq(
+    formula = y ~ x + I(x^2),
+    aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+    parse = TRUE
+  )
+ageotowgt_region
+
+agelength<- ggplot(cleanedmergedchili.dat,aes(x= age, y= Length_cm, colour= as.factor(sex)))+
+  geom_point(alpha = 0.1)+
+  geom_smooth(method= "lm", formula = y ~ poly(x, 2, raw = TRUE),se = FALSE)+
+  labs(x="Age (years)", y = "Length (cm)", title= "Age-length relationship")+
+  scale_x_continuous(name="Age (years)", limits=c(0,25)) +
+  scale_y_continuous(name="Length (cm)", limits=c(0,55))+
+  stat_poly_eq(
+    formula = y ~ x + I(x^2),
+    aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+    parse = TRUE
+  )
+agelength
+
+#vonbert curve
+#Length - age model VBGF
+  vbmodel <- Length_cm ~ Linf * (1 - exp(-K * (age - t0)))
+  starts <- vbStarts(formula = Length_cm~age, data = cleanedmergedchili.dat)
+  starts
+  vbo <- vbFuns("typical")
+  ggplot(data=cleanedmergedchili.dat,aes(x=age,y=Length_cm,color=sex)) +
+    geom_point(size=2,alpha=0.3) +
+    scale_y_continuous(name="Length (cm)",limits=c(0,60)) +
+    scale_x_continuous(name="Age (years)",breaks=0:24) +
+    scale_color_manual(values=c("M"="cyan3","F"="indianred1")) +
+    geom_smooth(method="nls",se=FALSE,
+                method.args=list(formula=y~vbo(x,Linf,K,t0),start=starts),
+                linewidth=1) +
+    theme(panel.grid.minor.x=element_blank(),
+          legend.position=c(0.8,0.2),
+          legend.title=element_blank())+
+    theme_bw() +
+    theme(panel.grid=element_blank()) 
+
+
+#vonbert curve
+  #otolith weight - age relationship
+  vbmodel <- Wgt_g ~ Linf * (1 - exp(-K * (age - t0)))
+  starts <- vbStarts(formula = Wgt_g~age, data = cleanedmergedchili.dat)
+  starts
+  vbo <- vbFuns("typical")
+  ggplot(data=cleanedmergedchili.dat,aes(x=age,y=Wgt_g,color=sex)) +
+    geom_point(size=2,alpha=0.3) +
+    scale_y_continuous(name="Otolith weight (g)",limits=c(0,0.45)) +
+    scale_x_continuous(name="Age (years)",breaks=0:24) +
+    scale_color_manual(values=c("M"="cyan3","F"="indianred1")) +
+    geom_smooth(method="nls",se=FALSE,
+                method.args=list(formula=y~vbo(x,Linf,K,t0),start=starts),
+                linewidth=1) +
+    theme(panel.grid.minor.x=element_blank(),
+          legend.position=c(0.8,0.2),
+          legend.title=element_blank())+
+    theme_bw() +
+    theme(panel.grid=element_blank())
+
+    #Length age model
+  vbmodel <- Length_cm ~ Linf * (1 - exp(-K * (age - t0)))
+  #starting values for each parameters using the `vbStarts` function
+  starts <- vbStarts(formula = Length_cm~age, data = cleanedmergedchili.dat)
+  starts
+  
+  ##Notes from EJ
+  #check na.omit just for length and age
+  #look at sex differences
+  #constant cv effect needs to be applied
+  
+  
+  mymod<- nls(vbmodel,data=cleanedmergedchili.dat, start = starts)
+  summary(mymod)
+  mymod_na <- (mymod$na.action) 
+  pred<- predict(mymod)
+  head(pred,50)
+  vbo <- vbFuns("typical")
+  vb_fit<- nls(Length_cm~vbo(age,Linf,K,t0), data = (cleanedmergedchili.dat), start=starts) #na.omit needs to stay for compat.
+  boot_fit<-nlsBoot(vb_fit)
+  
+  # bootstrapped confidence intervals
+  boot_preds <- data.frame(
+    predict(boot_fit, vbo, t = sort(unique(cleanedmergedchili.dat$age))))
+  names(boot_preds) <- c("age", "fit", "lwr", "upr")
+  my.formula<-  y ~ x
+  chilidata_preds<- merge(cleanedmergedchili.dat, boot_preds, by = "age")
+  ggplot(chilidata_preds, aes(x = age, y = Length_cm, colour= as.factor(sex))) +
+    geom_jitter(width = 0.1, alpha = 0.15, size = 2)+
+    geom_line(aes(y = fit))+
+    geom_smooth(aes(col=sex))+
+    geom_ribbon(
+      aes(x = age, ymin = lwr, ymax = upr, color = NULL), alpha = 0.3)+
+    stat_poly_eq(
+      formula = my.formula,
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      parse = TRUE
+    )+
+    xlab("Age (years)") +
+    ylab("Length (cm)") 
+  
+  #Using stat_smooth but need to use a different method
+  vbo <- vbFuns(param="Typical") 
+  
+  ggplot(data=chilidata_preds,aes(x=age,y=Wgt_g,color=sex)) +
+    geom_point(size=2,alpha=0.3) +
+    scale_y_continuous(name="Otolith Weight (g)",limits=c(0,0.45)) +
+    scale_x_continuous(name="Age (years)",breaks=0:24) +
+    scale_color_manual(values=c("M"="blue","F"="red")) +
+    stat_smooth()+
+    geom_smooth(method="nls",se=FALSE,
+                method.args=list(formula=y~vb(x,Linf,K,t0),start=starts),
+                linewidth=1) +
+    theme(panel.grid.minor.x=element_blank(),
+          legend.position=c(0.8,0.2),
+          legend.title=element_blank())+
+    theme_bw() +
+    theme(panel.grid=element_blank())
+  
